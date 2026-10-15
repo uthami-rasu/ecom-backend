@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+uploads/
+.test-uploads/
+.env
+*.log
+.DS_Store
+*.tsbuildinfo

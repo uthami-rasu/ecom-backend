@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ecom-backend-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ecom
+      POSTGRES_PASSWORD: ecom_dev_password
+      POSTGRES_DB: ecom
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - ecom-pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ecom -d ecom']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Catches every outgoing email in development: SMTP on 1025, web inbox on http://localhost:8025
+  mailpit:
+    image: axllent/mailpit
+    container_name: ecom-backend-mailpit
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
+
+volumes:
+  ecom-pgdata:
