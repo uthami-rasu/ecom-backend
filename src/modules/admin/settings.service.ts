@@ -1,7 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { MailService } from '../mail/mail.service.js';
+import { StoreSetting } from './store-setting.entity.js';
 
 export interface StoreSettings {
   // General Information
@@ -42,7 +43,7 @@ export interface StoreSettings {
     cod: boolean;
   };
 
-  // Email & SMTP Configuration
+  // Email & SMTP Configuration (Gmail SMTP — configured via Admin Panel, stored in DB)
   mail: {
     host: string;
     port: number;
@@ -53,136 +54,250 @@ export interface StoreSettings {
   };
 }
 
-const DEFAULT_SETTINGS: StoreSettings = {
-  storeName: 'NutriSelect Premium Nuts & Fruits',
-  storeLogo: '',
-  favicon: '',
-  contactEmail: 'hello@nutriselect.com',
-  phone: '+1 (555) 000-1234',
-  storeAddress: '123 Organic Lane, Green Valley, CA 90210, United States',
+/** Bossco defaults seeded into the DB on first run — no hardcoded file. */
+const DEFAULT_SETTINGS: Omit<StoreSettings, 'storeLogo' | 'favicon'> = {
+  storeName: 'Bossco Naturals',
+  contactEmail: 'hello@bossco.local',
+  phone: '+91 98765 43210',
+  storeAddress: 'Bossco Naturals, Kochi, Kerala, India',
 
-  taxId: 'GSTIN22AAAAA0000A1Z5',
-  registrationDetails: 'Registered as NutriSelect Private Limited under California Trade Act 2021.',
-  currency: 'USD ($)',
-  timeZone: '(GMT-08:00) Pacific Time (US & Canada)',
+  taxId: 'GSTIN32AAAAA0000A1Z5',
+  registrationDetails: 'Registered as Bossco Naturals Private Limited.',
+  currency: 'INR (₹)',
+  timeZone: '(GMT+05:30) India Standard Time',
 
-  standardDeliveryCharge: 5.0,
-  freeDeliveryThreshold: 50.0,
-  deliveryRegions: ['California', 'Oregon', 'Washington', 'Nevada'],
+  standardDeliveryCharge: 49.0,
+  freeDeliveryThreshold: 999.0,
+  deliveryRegions: ['Kerala', 'Tamil Nadu', 'Karnataka'],
 
   enableTax: true,
   defaultTaxRate: 18,
   productPriceType: 'inclusive',
 
-  minOrderValue: 20,
-  maxOrderValue: 1000,
+  minOrderValue: 0,
+  maxOrderValue: 100000,
   allowCod: true,
   cancellationWindowMinutes: 30,
 
   paymentMethods: {
     upi: true,
     card: true,
-    netBanking: false,
+    netBanking: true,
     cod: true,
   },
 
   mail: {
-    host: 'localhost',
-    port: 1025,
+    host: 'smtp.gmail.com',
+    port: 587,
     user: '',
     password: '',
-    from: 'NutriStock <no-reply@nutristock.local>',
+    from: 'Bossco Naturals <no-reply@bossco.local>',
     secure: false,
   },
 };
 
+function toApi(row: StoreSetting): StoreSettings {
+  return {
+    storeName: row.storeName,
+    storeLogo: row.storeLogoUrl ?? '',
+    favicon: row.faviconUrl ?? '',
+    contactEmail: row.contactEmail,
+    phone: row.phone,
+    storeAddress: row.storeAddress,
+    taxId: row.taxId,
+    registrationDetails: row.registrationDetails,
+    currency: row.currency,
+    timeZone: row.timeZone,
+    standardDeliveryCharge: Number(row.standardDeliveryCharge),
+    freeDeliveryThreshold: Number(row.freeDeliveryThreshold),
+    deliveryRegions: row.deliveryRegions ?? [],
+    enableTax: row.enableTax,
+    defaultTaxRate: Number(row.defaultTaxRate),
+    productPriceType: row.productPriceType,
+    minOrderValue: Number(row.minOrderValue),
+    maxOrderValue: Number(row.maxOrderValue),
+    allowCod: row.allowCod,
+    cancellationWindowMinutes: row.cancellationWindowMinutes,
+    paymentMethods: {
+      upi: row.paymentUpi,
+      card: row.paymentCard,
+      netBanking: row.paymentNetBanking,
+      cod: row.paymentCod,
+    },
+    mail: {
+      host: row.mailHost,
+      port: row.mailPort,
+      user: row.mailUser ?? '',
+      from: row.mailFrom,
+      secure: row.mailSecure,
+    },
+  };
+}
+
 @Injectable()
 export class SettingsService implements OnModuleInit {
   private readonly logger = new Logger(SettingsService.name);
-  private readonly filePath = path.resolve(process.cwd(), 'data', 'store-settings.json');
-  private settings: StoreSettings = { ...DEFAULT_SETTINGS };
 
-  constructor(private readonly mailService: MailService) {}
+  constructor(
+    @InjectRepository(StoreSetting)
+    private readonly repo: Repository<StoreSetting>,
+    private readonly mailService: MailService,
+  ) {}
 
   async onModuleInit() {
-    await this.loadSettings();
+    const settings = await this.getSettings();
+    if (settings.mail) {
+      this.mailService.setSmtpConfig({
+        transport: 'smtp',
+        host: settings.mail.host,
+        port: settings.mail.port,
+        user: settings.mail.user || undefined,
+        secure: settings.mail.secure,
+        from: settings.mail.from,
+      });
+    }
   }
 
-  private async loadSettings() {
-    try {
-      const data = await fs.readFile(this.filePath, 'utf-8');
-      this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
-      this.logger.log('Loaded store settings from persistent storage');
-
-      // Sync mail settings to MailService
-      if (this.settings.mail) {
-        this.mailService.setSmtpConfig({
-          transport: 'smtp',
-          host: this.settings.mail.host,
-          port: this.settings.mail.port,
-          user: this.settings.mail.user || undefined,
-          password: this.settings.mail.password || undefined,
-          secure: this.settings.mail.secure,
-          from: this.settings.mail.from,
-        });
-      }
-    } catch {
-      // If file doesn't exist, use default and current MailService config
-      const initialMail = this.mailService.getSmtpConfig();
-      if (initialMail.host) this.settings.mail.host = initialMail.host;
-      if (initialMail.port) this.settings.mail.port = initialMail.port;
-      if (initialMail.from) this.settings.mail.from = initialMail.from;
-      if (initialMail.user) this.settings.mail.user = initialMail.user;
+  private async getRow(): Promise<StoreSetting> {
+    let row = await this.repo.findOne({ where: {} });
+    if (!row) {
+      row = this.repo.create({
+        storeName: DEFAULT_SETTINGS.storeName,
+        storeLogoUrl: null,
+        storeLogoKey: null,
+        faviconUrl: null,
+        faviconKey: null,
+        contactEmail: DEFAULT_SETTINGS.contactEmail,
+        phone: DEFAULT_SETTINGS.phone,
+        storeAddress: DEFAULT_SETTINGS.storeAddress,
+        taxId: DEFAULT_SETTINGS.taxId,
+        registrationDetails: DEFAULT_SETTINGS.registrationDetails,
+        currency: DEFAULT_SETTINGS.currency,
+        timeZone: DEFAULT_SETTINGS.timeZone,
+        standardDeliveryCharge: DEFAULT_SETTINGS.standardDeliveryCharge,
+        freeDeliveryThreshold: DEFAULT_SETTINGS.freeDeliveryThreshold,
+        deliveryRegions: DEFAULT_SETTINGS.deliveryRegions,
+        enableTax: DEFAULT_SETTINGS.enableTax,
+        defaultTaxRate: DEFAULT_SETTINGS.defaultTaxRate,
+        productPriceType: DEFAULT_SETTINGS.productPriceType,
+        minOrderValue: DEFAULT_SETTINGS.minOrderValue,
+        maxOrderValue: DEFAULT_SETTINGS.maxOrderValue,
+        allowCod: DEFAULT_SETTINGS.allowCod,
+        cancellationWindowMinutes:
+          DEFAULT_SETTINGS.cancellationWindowMinutes,
+        paymentUpi: DEFAULT_SETTINGS.paymentMethods.upi,
+        paymentCard: DEFAULT_SETTINGS.paymentMethods.card,
+        paymentNetBanking: DEFAULT_SETTINGS.paymentMethods.netBanking,
+        paymentCod: DEFAULT_SETTINGS.paymentMethods.cod,
+        mailHost: DEFAULT_SETTINGS.mail.host,
+        mailPort: DEFAULT_SETTINGS.mail.port,
+        mailUser: DEFAULT_SETTINGS.mail.user || null,
+        mailPassword: DEFAULT_SETTINGS.mail.password || null,
+        mailFrom: DEFAULT_SETTINGS.mail.from,
+        mailSecure: DEFAULT_SETTINGS.mail.secure,
+      });
+      row = await this.repo.save(row);
+      this.logger.log('Seeded store settings into database');
     }
+    return row;
   }
 
   async getSettings(): Promise<StoreSettings> {
-    return { ...this.settings };
+    return toApi(await this.getRow());
   }
 
   async updateSettings(patch: Partial<StoreSettings>): Promise<StoreSettings> {
-    this.settings = {
-      ...this.settings,
-      ...patch,
-      paymentMethods: {
-        ...this.settings.paymentMethods,
-        ...(patch.paymentMethods ?? {}),
-      },
-      mail: {
-        ...this.settings.mail,
-        ...(patch.mail ?? {}),
-      },
-    };
-
-    // If mail settings updated, apply immediately to MailService
+    const row = await this.getRow();
+    if (patch.storeName !== undefined) row.storeName = patch.storeName;
+    if (patch.storeLogo !== undefined)
+      row.storeLogoUrl = patch.storeLogo || null;
+    if (patch.favicon !== undefined) row.faviconUrl = patch.favicon || null;
+    if (patch.contactEmail !== undefined) row.contactEmail = patch.contactEmail;
+    if (patch.phone !== undefined) row.phone = patch.phone;
+    if (patch.storeAddress !== undefined) row.storeAddress = patch.storeAddress;
+    if (patch.taxId !== undefined) row.taxId = patch.taxId;
+    if (patch.registrationDetails !== undefined)
+      row.registrationDetails = patch.registrationDetails;
+    if (patch.currency !== undefined) row.currency = patch.currency;
+    if (patch.timeZone !== undefined) row.timeZone = patch.timeZone;
+    if (patch.standardDeliveryCharge !== undefined)
+      row.standardDeliveryCharge = patch.standardDeliveryCharge;
+    if (patch.freeDeliveryThreshold !== undefined)
+      row.freeDeliveryThreshold = patch.freeDeliveryThreshold;
+    if (patch.deliveryRegions !== undefined)
+      row.deliveryRegions = patch.deliveryRegions;
+    if (patch.enableTax !== undefined) row.enableTax = patch.enableTax;
+    if (patch.defaultTaxRate !== undefined)
+      row.defaultTaxRate = patch.defaultTaxRate;
+    if (patch.productPriceType !== undefined)
+      row.productPriceType = patch.productPriceType;
+    if (patch.minOrderValue !== undefined)
+      row.minOrderValue = patch.minOrderValue;
+    if (patch.maxOrderValue !== undefined)
+      row.maxOrderValue = patch.maxOrderValue;
+    if (patch.allowCod !== undefined) row.allowCod = patch.allowCod;
+    if (patch.cancellationWindowMinutes !== undefined)
+      row.cancellationWindowMinutes = patch.cancellationWindowMinutes;
+    if (patch.paymentMethods) {
+      if (patch.paymentMethods.upi !== undefined)
+        row.paymentUpi = patch.paymentMethods.upi;
+      if (patch.paymentMethods.card !== undefined)
+        row.paymentCard = patch.paymentMethods.card;
+      if (patch.paymentMethods.netBanking !== undefined)
+        row.paymentNetBanking = patch.paymentMethods.netBanking;
+      if (patch.paymentMethods.cod !== undefined)
+        row.paymentCod = patch.paymentMethods.cod;
+    }
     if (patch.mail) {
+      if (patch.mail.host !== undefined) row.mailHost = patch.mail.host;
+      if (patch.mail.port !== undefined)
+        row.mailPort = Number(patch.mail.port);
+      if (patch.mail.user !== undefined)
+        row.mailUser = patch.mail.user || null;
+      if (patch.mail.password !== undefined)
+        row.mailPassword = patch.mail.password || null;
+      if (patch.mail.from !== undefined) row.mailFrom = patch.mail.from;
+      if (patch.mail.secure !== undefined) row.mailSecure = patch.mail.secure;
       this.mailService.setSmtpConfig({
         transport: 'smtp',
-        host: this.settings.mail.host,
-        port: Number(this.settings.mail.port),
-        user: this.settings.mail.user || undefined,
-        password: this.settings.mail.password || undefined,
-        secure: Boolean(this.settings.mail.secure),
-        from: this.settings.mail.from,
+        host: row.mailHost,
+        port: Number(row.mailPort),
+        user: row.mailUser || undefined,
+        password: row.mailPassword || undefined,
+        secure: Boolean(row.mailSecure),
+        from: row.mailFrom,
       });
-      this.logger.log(`SMTP settings updated from Admin Panel: ${this.settings.mail.host}:${this.settings.mail.port}`);
+      this.logger.log(
+        `SMTP settings updated from Admin Panel: ${row.mailHost}:${row.mailPort}`,
+      );
     }
+    await this.repo.save(row);
+    return this.getSettings();
+  }
 
-    try {
-      await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-      await fs.writeFile(this.filePath, JSON.stringify(this.settings, null, 2), 'utf-8');
-    } catch (err) {
-      this.logger.warn(`Could not persist settings to file: ${String(err)}`);
+  async setBrandImage(
+    kind: 'logo' | 'favicon',
+    url: string,
+    storageKey: string,
+  ): Promise<StoreSettings> {
+    const row = await this.getRow();
+    if (kind === 'logo') {
+      row.storeLogoUrl = url;
+      (row as { storeLogoKey: string | null }).storeLogoKey = storageKey;
+    } else {
+      row.faviconUrl = url;
+      (row as { faviconKey: string | null }).faviconKey = storageKey;
     }
-
-    return { ...this.settings };
+    await this.repo.save(row);
+    return this.getSettings();
   }
 
   async sendTestEmail(to: string): Promise<{ success: boolean; message: string }> {
+    const row = await this.getRow();
     await this.mailService.sendTestMail(to);
     return {
       success: true,
-      message: `Test email sent successfully to ${to} via ${this.settings.mail.host}:${this.settings.mail.port}`,
+      message: `Test email sent successfully to ${to} via ${row.mailHost}:${row.mailPort}`,
     };
   }
 }

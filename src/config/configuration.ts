@@ -115,8 +115,8 @@ export default (): AppConfig => {
     swaggerEnabled: bool(env.SWAGGER_ENABLED, true),
     mail: {
       transport: (env.MAIL_TRANSPORT as MailTransportName) ?? 'log',
-      host: env.MAIL_HOST ?? 'localhost',
-      port: num(env.MAIL_PORT, 1025),
+      host: env.MAIL_HOST ?? 'smtp.gmail.com',
+      port: num(env.MAIL_PORT, 587),
       secure: bool(env.MAIL_SECURE, false),
       user: env.MAIL_USER || null,
       password: env.MAIL_PASSWORD || null,

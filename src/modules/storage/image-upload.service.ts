@@ -18,7 +18,7 @@ export class ImageUploadService {
   ) {}
 
   async upload(
-    folder: 'products' | 'categories' | 'avatars',
+    folder: 'products' | 'categories' | 'avatars' | 'branding',
     file: Express.Multer.File | undefined,
   ): Promise<StoredImage> {
     if (!file?.buffer?.length)

@@ -95,11 +95,19 @@ export class CustomersService {
 
     qb.orderBy('u.created_at', 'DESC');
 
-    const totalCount = await this.users
+    const totalCountQuery = this.users
       .createQueryBuilder('u')
       .where('u.role = :role', { role: Role.Customer })
-      .andWhere(query.status === 'active' ? 'u.is_active = true' : query.status === 'inactive' ? 'u.is_active = false' : '1=1')
-      .getCount();
+      .andWhere(query.status === 'active' ? 'u.is_active = true' : query.status === 'inactive' ? 'u.is_active = false' : '1=1');
+
+    if (query.search) {
+      const term = `%${escapeLike(query.search.toLowerCase())}%`;
+      totalCountQuery.andWhere(
+        '(LOWER(u.first_name) LIKE :term OR LOWER(u.last_name) LIKE :term OR LOWER(u.email) LIKE :term OR u.phone LIKE :term)',
+        { term },
+      );
+    }
+    const totalCount = await totalCountQuery.getCount();
 
     qb.offset(offset).limit(limit);
 

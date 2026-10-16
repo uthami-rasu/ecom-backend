@@ -16,6 +16,7 @@ import { Product } from '../modules/products/entities/product.entity.js';
 import { Review } from '../modules/reviews/review.entity.js';
 import { Address } from '../modules/users/entities/address.entity.js';
 import { User } from '../modules/users/entities/user.entity.js';
+import { StoreSetting } from '../modules/admin/store-setting.entity.js';
 import { WishlistItem } from '../modules/wishlist/wishlist-item.entity.js';
 
 /** Explicit list (not a glob) so it works identically from ts sources and compiled js. */
@@ -39,4 +40,5 @@ export const entities = [
   Payment,
   ContactMessage,
   NewsletterSubscriber,
+  StoreSetting,
 ];

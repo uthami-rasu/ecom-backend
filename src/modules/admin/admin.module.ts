@@ -19,10 +19,11 @@ import { AdminSettingsController } from './controllers/admin-settings.controller
 import { CustomersService } from './customers.service.js';
 import { DashboardService } from './dashboard.service.js';
 import { SettingsService } from './settings.service.js';
+import { StoreSetting } from './store-setting.entity.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Order, Address]),
+    TypeOrmModule.forFeature([User, Order, Address, StoreSetting]),
     CategoriesModule,
     ProductsModule,
     OrdersModule,

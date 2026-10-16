@@ -21,9 +21,10 @@ export interface SentMail extends MailMessage {
 export const MAIL_SEND_FAILED = 'Could not send email, please try again';
 
 /**
- * Sends transactional email through one of three transports (MAIL_TRANSPORT):
- * `smtp` (Mailpit in development, a real relay in production), `log` (prints to the
- * console) or `memory` (in-process outbox read by the e2e tests).
+ * Sends transactional email via Gmail SMTP (MAIL_TRANSPORT=smtp with
+ * MAIL_HOST=smtp.gmail.com, or Admin Panel settings stored in DB), `log`
+ * (prints to the console) or `memory` (in-process outbox read by tests).
+ * All sending happens in the backend only — the frontend never sends mail.
  */
 @Injectable()
 export class MailService implements OnModuleDestroy {
@@ -79,13 +80,14 @@ export class MailService implements OnModuleDestroy {
   }
 
   async sendTestMail(to: string): Promise<void> {
-    await this.deliver({
+    try {
+      await this.deliver({
       to,
-      subject: 'NutriStock Test Email Configuration',
-      text: 'This is a test email confirming that your NutriStock Admin SMTP configuration is working correctly.',
+      subject: 'Bossco Naturals Test Email Configuration',
+      text: 'This is a test email confirming that your Bossco Admin SMTP configuration is working correctly.',
       html: `
         <div style="font-family: sans-serif; padding: 20px; color: #1c3321; line-height: 1.6;">
-          <h2 style="color: #1f7a55; margin-bottom: 8px;">NutriStock SMTP Verification</h2>
+          <h2 style="color: #1f7a55; margin-bottom: 8px;">Bossco SMTP Verification</h2>
           <p>Congratulations! Your outgoing email server settings configured from the Admin Panel are functioning properly.</p>
           <div style="background-color: #f4f7f4; padding: 12px; border-radius: 8px; margin: 16px 0;">
             <p style="margin: 4px 0;"><strong>Host:</strong> ${this.config.host}:${this.config.port}</p>
@@ -94,7 +96,16 @@ export class MailService implements OnModuleDestroy {
           </div>
         </div>
       `,
-    });
+      });
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message.split('\n')[0] : String(error);
+      this.logger.error(`Test email to ${to} failed: ${detail}`);
+      // Admin-only endpoint, so surfacing the SMTP cause is safe and actionable.
+      throw new ServiceUnavailableException(
+        `Could not send email via ${this.config.host}:${this.config.port} (${this.config.user || 'no user'}): ${detail}`,
+      );
+    }
   }
 
   get storefrontUrl(): string {
