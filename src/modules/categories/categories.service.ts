@@ -155,9 +155,20 @@ export class CategoriesService {
       qb.andWhere('c.isActive = :isActive', { isActive: query.isActive });
 
     const total = await qb.getCount();
+
+    if (query.sort === 'newest') {
+      qb.orderBy('c.createdAt', 'DESC');
+    } else if (query.sort === 'oldest') {
+      qb.orderBy('c.createdAt', 'ASC');
+    } else if (query.sort === 'name') {
+      qb.orderBy('c.name', 'ASC');
+    } else if (query.sort === 'products') {
+      qb.orderBy('product_count', 'DESC').addOrderBy('c.name', 'ASC');
+    } else {
+      qb.orderBy('c.sortOrder', 'ASC').addOrderBy('c.name', 'ASC');
+    }
+
     const { raw, entities } = await qb
-      .orderBy('c.sortOrder', 'ASC')
-      .addOrderBy('c.name', 'ASC')
       .offset(offsetOf(query))
       .limit(query.limit)
       .getRawAndEntities();

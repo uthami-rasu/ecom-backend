@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -88,4 +89,11 @@ export class AdminCategoryQueryDto extends PaginationQueryDto {
   @ToBoolean()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['newest', 'oldest', 'name', 'products', 'order'],
+  })
+  @IsOptional()
+  @IsIn(['newest', 'oldest', 'name', 'products', 'order'])
+  sort?: 'newest' | 'oldest' | 'name' | 'products' | 'order';
 }
