@@ -14,18 +14,52 @@ export class DatabasePingService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     this.logger.log(
-      'DatabasePingService initialized: keep-alive ping scheduled every 15 minutes',
+      'DatabasePingService initialized: keep-alive scheduled every 12 minutes',
     );
     await this.pingDatabase();
+    await this.pingSelf();
   }
 
   /**
-   * Pings the PostgreSQL database every 15 minutes (0, 15, 30, 45).
-   * Keeps idle connections alive on cloud/serverless providers and monitors database health.
+   * Pings PostgreSQL and the external backend URL every 12 minutes.
+   * Keeps Render free tier containers from spinning down (inactivity threshold is 15m)
+   * and prevents PostgreSQL connection pools from timing out.
    */
-  @Cron('0 */15 * * * *')
+  @Cron('0 */12 * * * *')
   async handleCron(): Promise<void> {
     await this.pingDatabase();
+    await this.pingSelf();
+  }
+
+  async pingSelf(): Promise<boolean> {
+    const externalUrl =
+      process.env.RENDER_EXTERNAL_URL ||
+      process.env.PUBLIC_BACKEND_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://bossco-backend.onrender.com'
+        : null);
+
+    if (!externalUrl) return false;
+
+    try {
+      const url = `${externalUrl.replace(/\/$/, '')}/api/v1/health`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        this.logger.log(
+          `Render keep-alive HTTP ping to ${url} succeeded (${res.status})`,
+        );
+        return true;
+      }
+      this.logger.warn(
+        `Render keep-alive HTTP ping to ${url} returned status ${res.status}`,
+      );
+      return false;
+    } catch (err) {
+      this.logger.warn(
+        `Render keep-alive HTTP ping failed: ${(err as Error).message}`,
+      );
+      return false;
+    }
   }
 
   async pingDatabase(): Promise<boolean> {

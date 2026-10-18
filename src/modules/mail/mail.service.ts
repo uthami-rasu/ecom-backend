@@ -126,11 +126,13 @@ export class MailService implements OnModuleDestroy {
     try {
       await this.deliver(message);
     } catch (error) {
-      // The subject is not logged: OTP subjects contain the code.
       this.logger.error(
         `Failed to send email to ${message.to}`,
         error instanceof Error ? error.stack : String(error),
       );
+      if (error instanceof ServiceUnavailableException) {
+        throw error;
+      }
       throw new ServiceUnavailableException(MAIL_SEND_FAILED);
     }
   }
@@ -193,6 +195,11 @@ export class MailService implements OnModuleDestroy {
           this.logger.error(
             `Resend API error sending to ${message.to}: ${error.message} (${error.name})`,
           );
+          if (error.message.includes('only send testing emails to your own email address')) {
+            throw new ServiceUnavailableException(
+              'Resend Free Sandbox: Can only send emails to your verified account email (therazz007@gmail.com). To send to all customer emails (e.g. yopmail, gmail), verify your domain at https://resend.com/domains.',
+            );
+          }
           throw new ServiceUnavailableException(
             `Email delivery failed via Resend: ${error.message}`,
           );
