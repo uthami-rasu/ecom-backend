@@ -146,7 +146,12 @@ export class SettingsService implements OnModuleInit {
 
   async onModuleInit() {
     const row = await this.getRow();
-    if (row.mailHost) {
+    // If the server is configured to use 'resend', preserve Resend:
+    if (this.mailService.transport === 'resend') {
+      this.logger.log('Active mail transport is Resend; keeping Resend active.');
+      return;
+    }
+    if (row.mailHost && row.mailUser && row.mailPassword) {
       this.mailService.setSmtpConfig({
         transport: 'smtp',
         host: row.mailHost,
@@ -297,11 +302,10 @@ export class SettingsService implements OnModuleInit {
   }
 
   async sendTestEmail(to: string): Promise<{ success: boolean; message: string }> {
-    const row = await this.getRow();
     await this.mailService.sendTestMail(to);
     return {
       success: true,
-      message: `Test email sent successfully to ${to} via ${row.mailHost}:${row.mailPort}`,
+      message: `Test email sent successfully to ${to} via ${this.mailService.transport.toUpperCase()}`,
     };
   }
 }

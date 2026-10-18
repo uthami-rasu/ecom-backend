@@ -2,7 +2,7 @@ import { toPaise } from '../common/utils/money.js';
 
 export type PaymentProviderName = 'mock';
 
-export type MailTransportName = 'smtp' | 'log' | 'memory';
+export type MailTransportName = 'smtp' | 'resend' | 'log' | 'memory';
 
 export interface AppConfig {
   env: 'development' | 'production' | 'test';
@@ -52,6 +52,7 @@ export interface AppConfig {
   swaggerEnabled: boolean;
   mail: {
     transport: MailTransportName;
+    resendApiKey?: string;
     host: string;
     port: number;
     secure: boolean;
@@ -171,13 +172,16 @@ export default (): AppConfig => {
     },
     swaggerEnabled: bool(env.SWAGGER_ENABLED, true),
     mail: {
-      transport: (env.MAIL_TRANSPORT as MailTransportName) ?? 'log',
+      transport:
+        (env.MAIL_TRANSPORT as MailTransportName) ??
+        (env.RESEND_API_KEY ? 'resend' : 'log'),
+      resendApiKey: env.RESEND_API_KEY,
       host: env.MAIL_HOST ?? 'smtp.gmail.com',
       port: num(env.MAIL_PORT, 587),
       secure: bool(env.MAIL_SECURE, false),
       user: env.MAIL_USER || null,
       password: env.MAIL_PASSWORD || null,
-      from: env.MAIL_FROM || 'Bossco Naturals <no-reply@bossco.local>',
+      from: env.MAIL_FROM || 'Bossco Naturals <onboarding@resend.dev>',
       storefrontUrl: (env.STOREFRONT_URL ?? 'http://localhost:5173').replace(
         /\/$/,
         '',

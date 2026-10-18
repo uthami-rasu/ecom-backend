@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, type Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 import type { AppConfig } from '../../config/configuration.js';
 import type { RenderedMail } from './mail.templates.js';
 
@@ -21,37 +22,57 @@ export interface SentMail extends MailMessage {
 export const MAIL_SEND_FAILED = 'Could not send email, please try again';
 
 /**
- * Sends transactional email via Gmail SMTP (MAIL_TRANSPORT=smtp with
- * MAIL_HOST=smtp.gmail.com, or Admin Panel settings stored in DB), `log`
- * (prints to the console) or `memory` (in-process outbox read by tests).
+ * Sends transactional email via Resend HTTP API (recommended on cloud platforms like Render),
+ * Gmail SMTP (MAIL_TRANSPORT=smtp with MAIL_HOST=smtp.gmail.com, or Admin Panel settings stored in DB),
+ * `log` (prints to the console) or `memory` (in-process outbox read by tests).
  * All sending happens in the backend only — the frontend never sends mail.
  */
 @Injectable()
 export class MailService implements OnModuleDestroy {
   private readonly logger = new Logger(MailService.name);
   private config: AppConfig['mail'];
-  private transporter: Transporter | null;
+  private transporter: Transporter | null = null;
+  private resendClient: Resend | null = null;
   /** Filled only by the `memory` transport. */
   readonly outbox: SentMail[] = [];
 
   constructor(config: ConfigService<AppConfig, true>) {
     this.config = config.get('mail', { infer: true });
-    this.transporter =
-      this.config.transport === 'smtp'
-        ? createTransport({
-            host: this.config.host,
-            port: this.config.port,
-            secure: this.config.secure,
-            auth: this.config.user
-              ? { user: this.config.user, pass: this.config.password ?? '' }
-              : undefined,
-          })
-        : null;
+    this.initTransport();
+  }
+
+  private initTransport(): void {
+    if (this.config.transport === 'resend') {
+      const apiKey = this.config.resendApiKey || process.env.RESEND_API_KEY;
+      if (apiKey) {
+        this.resendClient = new Resend(apiKey);
+        this.logger.log('Resend email transport initialized');
+      } else {
+        this.logger.warn('Resend transport selected, but RESEND_API_KEY is not configured');
+      }
+    } else if (this.config.transport === 'smtp') {
+      this.transporter = createTransport({
+        host: this.config.host,
+        port: this.config.port,
+        secure: this.config.secure,
+        auth: this.config.user
+          ? { user: this.config.user, pass: this.config.password ?? '' }
+          : undefined,
+      });
+      this.logger.log(
+        `SMTP transport initialized: ${this.config.host}:${this.config.port} (user: ${this.config.user ?? 'none'})`,
+      );
+    }
+  }
+
+  get transport(): string {
+    return this.config.transport;
   }
 
   getSmtpConfig(): Partial<AppConfig['mail']> {
     return {
       transport: this.config.transport,
+      resendApiKey: this.config.resendApiKey ? '••••••••' : undefined,
       host: this.config.host,
       port: this.config.port,
       secure: this.config.secure,
@@ -63,47 +84,35 @@ export class MailService implements OnModuleDestroy {
   setSmtpConfig(newConfig: Partial<AppConfig['mail']>): void {
     this.config = { ...this.config, ...newConfig };
     this.transporter?.close();
-    this.transporter =
-      this.config.transport === 'smtp'
-        ? createTransport({
-            host: this.config.host,
-            port: this.config.port,
-            secure: this.config.secure,
-            auth: this.config.user
-              ? { user: this.config.user, pass: this.config.password ?? '' }
-              : undefined,
-          })
-        : null;
-    this.logger.log(
-      `SMTP transport reconfigured: ${this.config.host}:${this.config.port} (user: ${this.config.user ?? 'none'})`,
-    );
+    this.transporter = null;
+    this.resendClient = null;
+    this.initTransport();
   }
 
   async sendTestMail(to: string): Promise<void> {
     try {
       await this.deliver({
-      to,
-      subject: 'Bossco Naturals Test Email Configuration',
-      text: 'This is a test email confirming that your Bossco Admin SMTP configuration is working correctly.',
-      html: `
-        <div style="font-family: sans-serif; padding: 20px; color: #1c3321; line-height: 1.6;">
-          <h2 style="color: #1f7a55; margin-bottom: 8px;">Bossco SMTP Verification</h2>
-          <p>Congratulations! Your outgoing email server settings configured from the Admin Panel are functioning properly.</p>
-          <div style="background-color: #f4f7f4; padding: 12px; border-radius: 8px; margin: 16px 0;">
-            <p style="margin: 4px 0;"><strong>Host:</strong> ${this.config.host}:${this.config.port}</p>
-            <p style="margin: 4px 0;"><strong>Sender:</strong> ${this.config.from}</p>
-            <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+        to,
+        subject: 'Bossco Naturals Test Email Configuration',
+        text: `This is a test email confirming that your Bossco email configuration (${this.config.transport.toUpperCase()}) is working correctly.`,
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; color: #1c3321; line-height: 1.6;">
+            <h2 style="color: #1f7a55; margin-bottom: 8px;">Bossco Email Verification</h2>
+            <p>Congratulations! Your outgoing email server settings (${this.config.transport.toUpperCase()}) are functioning properly.</p>
+            <div style="background-color: #f4f7f4; padding: 12px; border-radius: 8px; margin: 16px 0;">
+              <p style="margin: 4px 0;"><strong>Transport:</strong> ${this.config.transport}</p>
+              <p style="margin: 4px 0;"><strong>Sender:</strong> ${this.config.from}</p>
+              <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+            </div>
           </div>
-        </div>
-      `,
+        `,
       });
     } catch (error) {
       const detail =
         error instanceof Error ? error.message.split('\n')[0] : String(error);
       this.logger.error(`Test email to ${to} failed: ${detail}`);
-      // Admin-only endpoint, so surfacing the SMTP cause is safe and actionable.
       throw new ServiceUnavailableException(
-        `Could not send email via ${this.config.host}:${this.config.port} (${this.config.user || 'no user'}): ${detail}`,
+        `Could not send email via ${this.config.transport}: ${detail}`,
       );
     }
   }
@@ -147,19 +156,60 @@ export class MailService implements OnModuleDestroy {
   }
 
   private async deliver(message: MailMessage): Promise<void> {
-    const from = this.config.from;
+    const from =
+      this.config.from && !this.config.from.includes('bossco.local')
+        ? this.config.from
+        : 'Bossco Naturals <onboarding@resend.dev>';
+
     switch (this.config.transport) {
       case 'memory':
-        this.outbox.push({ ...message, from, sentAt: new Date() });
+        this.outbox.push({ ...message, from: this.config.from, sentAt: new Date() });
         return;
       case 'log':
         this.logger.log(
-          `Email to ${message.to} — ${message.subject}\n${message.text}`,
+          `[LOG EMAIL] To: ${message.to} — ${message.subject}\n${message.text}`,
         );
         return;
-      default:
-        await this.transporter!.sendMail({
+      case 'resend': {
+        const apiKey = this.config.resendApiKey || process.env.RESEND_API_KEY;
+        if (!this.resendClient && apiKey) {
+          this.resendClient = new Resend(apiKey);
+        }
+        if (!this.resendClient) {
+          throw new ServiceUnavailableException(
+            'Resend API key is not configured. Please set RESEND_API_KEY in environment.',
+          );
+        }
+
+        const { data, error } = await this.resendClient.emails.send({
           from,
+          to: message.to,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        });
+
+        if (error) {
+          this.logger.error(
+            `Resend API error sending to ${message.to}: ${error.message} (${error.name})`,
+          );
+          throw new ServiceUnavailableException(
+            `Email delivery failed via Resend: ${error.message}`,
+          );
+        }
+
+        this.logger.log(
+          `Email successfully sent via Resend to ${message.to} (Message ID: ${data?.id})`,
+        );
+        return;
+      }
+      case 'smtp':
+      default:
+        if (!this.transporter) {
+          throw new ServiceUnavailableException('SMTP transporter is not configured');
+        }
+        await this.transporter.sendMail({
+          from: this.config.from,
           to: message.to,
           subject: message.subject,
           text: message.text,

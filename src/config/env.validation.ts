@@ -60,7 +60,10 @@ export const envValidationSchema = Joi.object({
 
   SWAGGER_ENABLED: Joi.boolean().default(true),
 
-  MAIL_TRANSPORT: Joi.string().valid('smtp', 'log', 'memory').default('log'),
+  MAIL_TRANSPORT: Joi.string()
+    .valid('smtp', 'resend', 'log', 'memory')
+    .default('log'),
+  RESEND_API_KEY: Joi.string().allow('').optional(),
   MAIL_HOST: Joi.string().hostname().default('localhost'),
   MAIL_PORT: Joi.number().port().default(1025),
   MAIL_SECURE: Joi.boolean().default(false),
