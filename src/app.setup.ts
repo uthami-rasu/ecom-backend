@@ -29,13 +29,35 @@ export function configureApp(app: NestExpressApplication): INestApplication {
   app.useBodyParser('json', { limit: '100kb' });
   app.useBodyParser('urlencoded', { limit: '100kb', extended: false });
 
-  const allowedOrigins = new Set(config.get('corsOrigins', { infer: true }));
+  const rawOrigins = config.get('corsOrigins', { infer: true }) ?? [];
+  const allowedOrigins = new Set(
+    rawOrigins.map((o: string) => o.trim().replace(/\/$/, '')),
+  );
+
   app.enableCors({
-    origin: (origin, callback) =>
-      callback(null, !origin || allowedOrigins.has(origin)),
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
-    maxAge: 600,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const cleanOrigin = origin.replace(/\/$/, '');
+      const isAllowed =
+        allowedOrigins.has('*') ||
+        allowedOrigins.has(cleanOrigin) ||
+        /^https?:\/\/([a-z0-9-]+\.)*bosscodryfruits\.com$/i.test(cleanOrigin) ||
+        /^https?:\/\/([a-z0-9-]+\.)*vercel\.app$/i.test(cleanOrigin) ||
+        /^https?:\/\/localhost(:[0-9]+)?$/i.test(cleanOrigin) ||
+        /^https?:\/\/127\.0\.0\.1(:[0-9]+)?$/i.test(cleanOrigin);
+
+      callback(null, isAllowed);
+    },
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'Accept',
+      'Origin',
+      'X-Requested-With',
+    ],
+    credentials: true,
+    maxAge: 86400,
   });
 
   app.setGlobalPrefix(API_PREFIX);
