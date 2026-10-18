@@ -15,6 +15,7 @@ export interface AppConfig {
     password: string;
     name: string;
     ssl: boolean;
+    sslRejectUnauthorized: boolean;
     poolMax: number;
     logging: boolean;
   };
@@ -26,7 +27,21 @@ export interface AppConfig {
   corsOrigins: string[];
   throttle: { ttlMs: number; limit: number; authLimit: number };
   cacheTtlMs: number;
-  uploads: { dir: string; publicBaseUrl: string; maxBytes: number };
+  uploads: {
+    dir: string;
+    publicBaseUrl: string;
+    maxBytes: number;
+    driver: 'local' | 's3';
+    s3: {
+      endpoint: string;
+      region: string;
+      bucket: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      publicBaseUrl: string;
+      forcePathStyle: boolean;
+    };
+  };
   payments: {
     provider: PaymentProviderName;
     keySecret: string;
@@ -60,6 +75,33 @@ const num = (value: string | undefined, fallback: number): number =>
 export default (): AppConfig => {
   const env = process.env;
   const trustProxy = env.TRUST_PROXY;
+
+  let dbHost = env.DB_HOST ?? 'localhost';
+  let dbPort = num(env.DB_PORT, 5432);
+  let dbUser = env.DB_USER ?? '';
+  let dbPassword = env.DB_PASSWORD ?? '';
+  let dbName = env.DB_NAME ?? '';
+  let dbSsl = bool(env.DB_SSL, false);
+
+  if (env.DATABASE_URL) {
+    try {
+      const parsedUrl = new URL(env.DATABASE_URL);
+      dbHost = parsedUrl.hostname || dbHost;
+      dbPort = parsedUrl.port ? Number(parsedUrl.port) : dbPort;
+      dbUser = decodeURIComponent(parsedUrl.username) || dbUser;
+      dbPassword = decodeURIComponent(parsedUrl.password) || dbPassword;
+      dbName = parsedUrl.pathname.replace(/^\//, '') || dbName;
+      if (
+        parsedUrl.searchParams.get('sslmode') === 'require' ||
+        parsedUrl.searchParams.get('ssl') === 'true'
+      ) {
+        dbSsl = true;
+      }
+    } catch {
+      // Fallback to individual DB_* env variables
+    }
+  }
+
   return {
     env: (env.NODE_ENV as AppConfig['env']) ?? 'development',
     port: num(env.PORT, 3000),
@@ -70,12 +112,13 @@ export default (): AppConfig => {
           ? Number(trustProxy)
           : bool(trustProxy, false),
     db: {
-      host: env.DB_HOST ?? 'localhost',
-      port: num(env.DB_PORT, 5432),
-      user: env.DB_USER ?? '',
-      password: env.DB_PASSWORD ?? '',
-      name: env.DB_NAME ?? '',
-      ssl: bool(env.DB_SSL, false),
+      host: dbHost,
+      port: dbPort,
+      user: dbUser,
+      password: dbPassword,
+      name: dbName,
+      ssl: dbSsl,
+      sslRejectUnauthorized: bool(env.DB_SSL_REJECT_UNAUTHORIZED, false),
       poolMax: num(env.DB_POOL_MAX, 10),
       logging: bool(env.DB_LOGGING, false),
     },
@@ -101,6 +144,20 @@ export default (): AppConfig => {
         '',
       ),
       maxBytes: num(env.MAX_UPLOAD_BYTES, 5 * 1024 * 1024),
+      driver: (env.STORAGE_DRIVER as 'local' | 's3') ?? 'local',
+      s3: {
+        endpoint: env.S3_ENDPOINT ?? '',
+        region: env.S3_REGION ?? 'ap-southeast-1',
+        bucket: env.S3_BUCKET ?? '',
+        accessKeyId: env.S3_ACCESS_KEY_ID ?? '',
+        secretAccessKey: env.S3_SECRET_ACCESS_KEY ?? '',
+        publicBaseUrl: (
+          env.S3_PUBLIC_BASE_URL ??
+          env.PUBLIC_BASE_URL ??
+          ''
+        ).replace(/\/$/, ''),
+        forcePathStyle: bool(env.S3_FORCE_PATH_STYLE, true),
+      },
     },
     payments: {
       provider: (env.PAYMENT_PROVIDER as PaymentProviderName) ?? 'mock',

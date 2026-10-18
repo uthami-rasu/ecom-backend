@@ -10,12 +10,16 @@ export const envValidationSchema = Joi.object({
     Joi.number().integer().min(0),
   ).default(false),
 
+  DATABASE_URL: Joi.string()
+    .uri({ scheme: [/postgres/, /postgresql/] })
+    .optional(),
   DB_HOST: Joi.string().default('localhost'),
   DB_PORT: Joi.number().port().default(5432),
-  DB_USER: Joi.string().required(),
-  DB_PASSWORD: Joi.string().required(),
-  DB_NAME: Joi.string().required(),
+  DB_USER: Joi.string().allow('').optional().default(''),
+  DB_PASSWORD: Joi.string().allow('').optional().default(''),
+  DB_NAME: Joi.string().allow('').optional().default(''),
   DB_SSL: Joi.boolean().default(false),
+  DB_SSL_REJECT_UNAUTHORIZED: Joi.boolean().default(false),
   DB_POOL_MAX: Joi.number().integer().min(1).default(10),
   DB_LOGGING: Joi.boolean().default(false),
 
@@ -37,6 +41,14 @@ export const envValidationSchema = Joi.object({
     .integer()
     .min(1024)
     .default(5 * 1024 * 1024),
+  STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
+  S3_ENDPOINT: Joi.string().allow('').optional(),
+  S3_REGION: Joi.string().allow('').default('ap-southeast-1'),
+  S3_BUCKET: Joi.string().allow('').optional(),
+  S3_ACCESS_KEY_ID: Joi.string().allow('').optional(),
+  S3_SECRET_ACCESS_KEY: Joi.string().allow('').optional(),
+  S3_PUBLIC_BASE_URL: Joi.string().allow('').optional(),
+  S3_FORCE_PATH_STYLE: Joi.boolean().default(true),
 
   PAYMENT_PROVIDER: Joi.string().valid('mock').default('mock'),
   PAYMENT_KEY_SECRET: Joi.string().min(16).required(),

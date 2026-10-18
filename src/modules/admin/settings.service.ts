@@ -145,15 +145,16 @@ export class SettingsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const settings = await this.getSettings();
-    if (settings.mail) {
+    const row = await this.getRow();
+    if (row.mailHost) {
       this.mailService.setSmtpConfig({
         transport: 'smtp',
-        host: settings.mail.host,
-        port: settings.mail.port,
-        user: settings.mail.user || undefined,
-        secure: settings.mail.secure,
-        from: settings.mail.from,
+        host: row.mailHost,
+        port: Number(row.mailPort),
+        user: row.mailUser || undefined,
+        password: row.mailPassword || undefined,
+        secure: Boolean(row.mailSecure),
+        from: row.mailFrom,
       });
     }
   }
@@ -254,8 +255,11 @@ export class SettingsService implements OnModuleInit {
         row.mailPort = Number(patch.mail.port);
       if (patch.mail.user !== undefined)
         row.mailUser = patch.mail.user || null;
-      if (patch.mail.password !== undefined)
-        row.mailPassword = patch.mail.password || null;
+      if (
+        patch.mail.password !== undefined &&
+        patch.mail.password.trim() !== ''
+      )
+        row.mailPassword = patch.mail.password;
       if (patch.mail.from !== undefined) row.mailFrom = patch.mail.from;
       if (patch.mail.secure !== undefined) row.mailSecure = patch.mail.secure;
       this.mailService.setSmtpConfig({

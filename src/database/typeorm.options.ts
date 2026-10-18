@@ -12,7 +12,7 @@ export function buildDataSourceOptions(db: AppConfig['db']): DataSourceOptions {
     username: db.user,
     password: db.password,
     database: db.name,
-    ssl: db.ssl ? { rejectUnauthorized: true } : false,
+    ssl: db.ssl ? { rejectUnauthorized: db.sslRejectUnauthorized ?? false } : false,
     entities,
     migrations,
     namingStrategy: new SnakeNamingStrategy(),

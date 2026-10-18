@@ -18,7 +18,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { CartModule } from './modules/cart/cart.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
 import { ContactModule } from './modules/contact/contact.module.js';
-import { HealthController } from './modules/health/health.controller.js';
+import { ScheduleModule } from '@nestjs/schedule';
+import { HealthModule } from './modules/health/health.module.js';
 import { MailModule } from './modules/mail/mail.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
@@ -30,6 +31,7 @@ import { WishlistModule } from './modules/wishlist/wishlist.module.js';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
@@ -95,8 +97,8 @@ import { WishlistModule } from './modules/wishlist/wishlist.module.js';
     PaymentsModule,
     ContactModule,
     AdminModule,
+    HealthModule,
   ],
-  controllers: [HealthController],
   providers: [
     // Order matters: rate limit first, then authenticate, then authorise.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
