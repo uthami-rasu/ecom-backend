@@ -159,9 +159,11 @@ export class MailService implements OnModuleDestroy {
 
   private async deliver(message: MailMessage): Promise<void> {
     const from =
-      this.config.from && !this.config.from.includes('bossco.local')
+      this.config.from &&
+      !this.config.from.includes('bossco.local') &&
+      !this.config.from.includes('onboarding@resend.dev')
         ? this.config.from
-        : 'Bossco Naturals <onboarding@resend.dev>';
+        : 'Bossco Naturals <noreply@bosscodryfruits.com>';
 
     switch (this.config.transport) {
       case 'memory':

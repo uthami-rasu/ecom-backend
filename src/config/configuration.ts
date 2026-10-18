@@ -181,7 +181,7 @@ export default (): AppConfig => {
       secure: bool(env.MAIL_SECURE, false),
       user: env.MAIL_USER || null,
       password: env.MAIL_PASSWORD || null,
-      from: env.MAIL_FROM || 'Bossco Naturals <onboarding@resend.dev>',
+      from: env.MAIL_FROM || 'Bossco Naturals <noreply@bosscodryfruits.com>',
       storefrontUrl: (env.STOREFRONT_URL ?? 'http://localhost:5173').replace(
         /\/$/,
         '',
