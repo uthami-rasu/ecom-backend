@@ -12,6 +12,8 @@ import { Product } from '../../modules/products/entities/product.entity.js';
 import { Review } from '../../modules/reviews/review.entity.js';
 import { processImage } from '../../modules/storage/image-processing.js';
 import { LocalStorageService } from '../../modules/storage/local-storage.service.js';
+import { S3StorageService } from '../../modules/storage/s3-storage.service.js';
+import type { StorageService } from '../../modules/storage/storage.interface.js';
 import { User } from '../../modules/users/entities/user.entity.js';
 import { UsersService } from '../../modules/users/users.service.js';
 import {
@@ -30,16 +32,34 @@ export interface SeedOptions {
   log?: (message: string) => void;
 }
 
+/** Build the correct storage backend from config, matching StorageModule logic. */
+function createStorageService(uploads: AppConfig['uploads']): StorageService {
+  if (
+    uploads.driver === 's3' &&
+    uploads.s3?.bucket &&
+    uploads.s3.accessKeyId
+  ) {
+    return new S3StorageService({
+      endpoint: uploads.s3.endpoint,
+      region: uploads.s3.region,
+      bucket: uploads.s3.bucket,
+      accessKeyId: uploads.s3.accessKeyId,
+      secretAccessKey: uploads.s3.secretAccessKey,
+      publicBaseUrl: uploads.s3.publicBaseUrl,
+      forcePathStyle: uploads.s3.forcePathStyle,
+    });
+  }
+  return new LocalStorageService(uploads.dir, uploads.publicBaseUrl);
+}
+
 /** Idempotent: existing rows (matched by slug / email / code) are left untouched. */
 export async function seedDatabase(
   dataSource: DataSource,
   options: SeedOptions,
 ): Promise<void> {
   const log = options.log ?? (() => undefined);
-  const storage = new LocalStorageService(
-    options.uploads.dir,
-    options.uploads.publicBaseUrl,
-  );
+  const storage = createStorageService(options.uploads);
+  log(`storage driver: ${options.uploads.driver}`);
 
   await dataSource.transaction(async (manager) => {
     // Users
@@ -167,9 +187,9 @@ export async function seedDatabase(
           const renditions = await processImage(source);
           const storageKey = `products/seed-${seed.slug}`;
           const [url, mediumUrl, thumbUrl] = await Promise.all([
-            storage.put(`${storageKey}-lg.webp`, renditions.lg),
-            storage.put(`${storageKey}-md.webp`, renditions.md),
-            storage.put(`${storageKey}-sm.webp`, renditions.sm),
+            storage.put(`${storageKey}-lg.webp`, renditions.lg, 'image/webp'),
+            storage.put(`${storageKey}-md.webp`, renditions.md, 'image/webp'),
+            storage.put(`${storageKey}-sm.webp`, renditions.sm, 'image/webp'),
           ]);
           await manager.getRepository(ProductImage).save({
             productId: product.id,

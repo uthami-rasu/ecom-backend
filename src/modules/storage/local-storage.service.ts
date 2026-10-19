@@ -12,7 +12,7 @@ export class LocalStorageService implements StorageService {
     this.root = resolve(uploadDir);
   }
 
-  async put(key: string, body: Buffer): Promise<string> {
+  async put(key: string, body: Buffer, _contentType?: string): Promise<string> {
     const path = this.resolveKey(key);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, body);
